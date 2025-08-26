@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1037365635750",
+    "project_id": "gymalex-60870",
+    "storage_bucket": "gymalex-60870.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037365635750:android:4751142c879d18f03de267",
+        "android_client_info": {
+          "package_name": "com.example.gym_v1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGvT4pVeC71bAszi9NbdL7iM-rEHAYxb8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

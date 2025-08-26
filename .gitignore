@@ -1,0 +1,33 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub-cache/
+build/
+coverage/
+generated_plugin_registrant.dart
+
+# Android/Gradle
+**/local.properties
+**/.gradle/
+**/captures/
+**/app/*.keystore
+**/app/*.jks
+**/key.properties
+
+# iOS (si algún día añades iOS)
+ios/Pods/
+**/*.xcworkspace
+**/*.xcuserdatad
+**/*.xcuserstate
+
+# IDE
+.idea/
+.vscode/
+
+# Logs y temporales
+*.log
+*.iml
+
+# (Opcional) Copias locales/exports
+**/GymLog/backups/
+**/GymLog/*.csv
