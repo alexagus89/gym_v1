@@ -23,7 +23,7 @@ ios/Pods/
 # IDE
 .idea/
 .vscode/
-
+    
 # Logs y temporales
 *.log
 *.iml
