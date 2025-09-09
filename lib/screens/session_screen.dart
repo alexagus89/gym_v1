@@ -103,7 +103,7 @@ class _ExerciseCard extends StatefulWidget {
   final VoidCallback onChanged;
   final ValueChanged<String> onRename;
   final ValueChanged<SetEntry> onAddSet;
-  final VoidCallback onRemoveLast;     // 👈 NUEVO
+  final VoidCallback onRemoveLast; // NUEVO
   final AppState appState;
 
   const _ExerciseCard({
@@ -112,7 +112,7 @@ class _ExerciseCard extends StatefulWidget {
     required this.onChanged,
     required this.onRename,
     required this.onAddSet,
-    required this.onRemoveLast,        // 👈 NUEVO
+    required this.onRemoveLast, // NUEVO
     required this.appState,
   });
 
@@ -124,6 +124,21 @@ class _ExerciseCardState extends State<_ExerciseCard> {
   late final TextEditingController _nameCtrl;
   final Map<String, TextEditingController> _repsCtrls = {};
   final Map<String, TextEditingController> _kgCtrls = {};
+
+  // ==== Estilos compactos para evitar overflow ====
+  ButtonStyle _btnSmallOutlined() => OutlinedButton.styleFrom(
+    minimumSize: const Size(36, 36),
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
+  ButtonStyle _btnSmallFilled() => FilledButton.styleFrom(
+    minimumSize: const Size(36, 36),
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 
   @override
   void initState() {
@@ -145,9 +160,13 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     final currentIds = widget.sets.map((s) => s.id).toSet();
     for (final s in widget.sets) {
       _repsCtrls.putIfAbsent(
-          s.id, () => TextEditingController(text: s.reps == 0 ? '' : s.reps.toString()));
+        s.id,
+            () => TextEditingController(text: s.reps == 0 ? '' : s.reps.toString()),
+      );
       _kgCtrls.putIfAbsent(
-          s.id, () => TextEditingController(text: s.weight == 0 ? '' : s.weight.toString()));
+        s.id,
+            () => TextEditingController(text: s.weight == 0 ? '' : s.weight.toString()),
+      );
     }
     _repsCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_repsCtrls.remove);
     _kgCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_kgCtrls.remove);
@@ -156,8 +175,12 @@ class _ExerciseCardState extends State<_ExerciseCard> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    for (final c in _repsCtrls.values) { c.dispose(); }
-    for (final c in _kgCtrls.values) { c.dispose(); }
+    for (final c in _repsCtrls.values) {
+      c.dispose();
+    }
+    for (final c in _kgCtrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -176,7 +199,8 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     void addOneSet() {
       final nextIndex = (widget.sets.isEmpty
           ? 0
-          : widget.sets.map((x) => x.setIndex).reduce((a, b) => a > b ? a : b)) + 1;
+          : widget.sets.map((x) => x.setIndex).reduce((a, b) => a > b ? a : b)) +
+          1;
       final last = widget.appState.lastSetFor(widget.name, nextIndex);
       final target = widget.sets.isNotEmpty ? widget.sets.first.targetReps : 10;
 
@@ -195,7 +219,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
     void removeLastSet() {
       if (widget.sets.isEmpty) return;
-      widget.onRemoveLast();   // el padre elimina en s.sets
+      widget.onRemoveLast();
       widget.onChanged();
     }
 
@@ -206,7 +230,12 @@ class _ExerciseCardState extends State<_ExerciseCard> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           TextFormField(
             controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: 'Ejercicio', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+              labelText: 'Ejercicio',
+              border: OutlineInputBorder(),
+              isDense: true, // un pelín más compacto
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            ),
             onChanged: widget.onRename,
           ),
           if (isPR) ...[
@@ -224,86 +253,139 @@ class _ExerciseCardState extends State<_ExerciseCard> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(children: [
-                SizedBox(width: 36, child: Text('#${s.setIndex}')),
-                Expanded(child: Row(children: [
-                  Expanded(child: TextFormField(
-                    controller: repsCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Reps'),
-                    onChanged: (v) { s.reps = int.tryParse(v) ?? 0; widget.onChanged(); },
-                  )),
-                  const SizedBox(width: 6),
-                  SizedBox(height: 36, child: OutlinedButton(
-                    onPressed: () {
-                      s.reps = (s.reps + 1).clamp(0, 1000).toInt();
-                      repsCtrl.text = s.reps.toString();
-                      widget.onChanged();
-                    },
-                    child: const Text('+'),
-                  )),
-                  const SizedBox(width: 6),
-                  SizedBox(height: 36, child: OutlinedButton(
-                    onPressed: () {
-                      s.reps = (s.reps - 1).clamp(0, 1000).toInt();
-                      repsCtrl.text = s.reps == 0 ? '' : s.reps.toString();
-                      widget.onChanged();
-                    },
-                    child: const Text('-'),
-                  )),
-                ])),
+                SizedBox(width: 28, child: Text('#${s.setIndex}')), // antes 36 → 28
+
+                // Reps con +/- compactos
+                Expanded(
+                  child: Row(children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: repsCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Reps',
+                          isDense: true, // compacto
+                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        ),
+                        onChanged: (v) {
+                          s.reps = int.tryParse(v) ?? 0;
+                          widget.onChanged();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      height: 36,
+                      child: OutlinedButton(
+                        style: _btnSmallOutlined(),
+                        onPressed: () {
+                          s.reps = (s.reps + 1).clamp(0, 1000).toInt();
+                          repsCtrl.text = s.reps.toString();
+                          widget.onChanged();
+                        },
+                        child: const Text('+'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      height: 36,
+                      child: OutlinedButton(
+                        style: _btnSmallOutlined(),
+                        onPressed: () {
+                          s.reps = (s.reps - 1).clamp(0, 1000).toInt();
+                          repsCtrl.text = s.reps == 0 ? '' : s.reps.toString();
+                          widget.onChanged();
+                        },
+                        child: const Text('-'),
+                      ),
+                    ),
+                  ]),
+                ),
+
                 const SizedBox(width: 8),
-                Expanded(child: Row(children: [
-                  Expanded(child: TextFormField(
-                    controller: kgCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Kg'),
-                    onChanged: (v) { s.weight = double.tryParse(v.replaceAll(',', '.')) ?? 0; widget.onChanged(); },
-                  )),
-                  const SizedBox(width: 6),
-                  SizedBox(height: 36, child: OutlinedButton(
-                    onPressed: () {
-                      s.weight = s.weight + 2.5;
-                      kgCtrl.text = s.weight.toString();
-                      widget.onChanged();
-                    },
-                    child: const Text('+2.5'),
-                  )),
-                  const SizedBox(width: 6),
-                  SizedBox(height: 36, child: OutlinedButton(
-                    onPressed: () {
-                      s.weight = s.weight - 2.5;
-                      if (s.weight < 0) s.weight = 0;
-                      kgCtrl.text = s.weight == 0 ? '' : s.weight.toString();
-                      widget.onChanged();
-                    },
-                    child: const Text('-2.5'),
-                  )),
-                ])),
+
+                // Kg con +/-2.5 compactos
+                Expanded(
+                  child: Row(children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: kgCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Kg',
+                          isDense: true, // compacto
+                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        ),
+                        onChanged: (v) {
+                          s.weight = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                          widget.onChanged();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      height: 36,
+                      child: OutlinedButton(
+                        style: _btnSmallOutlined(),
+                        onPressed: () {
+                          s.weight = s.weight + 2.5;
+                          kgCtrl.text = s.weight.toString();
+                          widget.onChanged();
+                        },
+                        child: const Text('+2.5'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      height: 36,
+                      child: OutlinedButton(
+                        style: _btnSmallOutlined(),
+                        onPressed: () {
+                          s.weight = s.weight - 2.5;
+                          if (s.weight < 0) s.weight = 0;
+                          kgCtrl.text = s.weight == 0 ? '' : s.weight.toString();
+                          widget.onChanged();
+                        },
+                        child: const Text('-2.5'),
+                      ),
+                    ),
+                  ]),
+                ),
               ]),
             );
           }),
 
           const SizedBox(height: 8),
+
+          // Fila inferior: evita overflow con Wrap en los botones
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Objetivo aprox: ${widget.sets.isNotEmpty ? widget.sets.first.targetReps : '-'} reps',
-                style: const TextStyle(color: Colors.grey),
+              Expanded(
+                child: Text(
+                  'Objetivo aprox: ${widget.sets.isNotEmpty ? widget.sets.first.targetReps : '-'} reps',
+                  style: const TextStyle(color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              Row(children: [
-                OutlinedButton.icon(
-                  onPressed: widget.sets.isEmpty ? null : removeLastSet,
-                  icon: const Icon(Icons.remove),
-                  label: const Text('Eliminar última'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: addOneSet,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Añadir serie'),
-                ),
-              ]),
+              const SizedBox(width: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  OutlinedButton.icon(
+                    style: _btnSmallOutlined(),
+                    onPressed: widget.sets.isEmpty ? null : () => removeLastSet(),
+                    icon: const Icon(Icons.remove),
+                    label: const Text('Eliminar última'),
+                  ),
+                  FilledButton.icon(
+                    style: _btnSmallFilled(),
+                    onPressed: addOneSet,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Añadir serie'),
+                  ),
+                ],
+              ),
             ],
           ),
         ]),
@@ -311,5 +393,3 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     );
   }
 }
-
-

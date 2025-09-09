@@ -1,9 +1,11 @@
 // lib/main.dart
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';            // 👈 IMPORT NECESARIO
 import 'state/app_state.dart';
 import 'screens/start_tab.dart';
 import 'screens/templates_tab.dart';
 import 'screens/history_tab.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io' show Platform;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +14,7 @@ void main() {
 
 class GymLogApp extends StatelessWidget {
   const GymLogApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -25,7 +28,9 @@ class GymLogApp extends StatelessWidget {
 class AppRoot extends StatefulWidget {
   final AppState state;
   const AppRoot({super.key, required this.state});
-  @override State<AppRoot> createState() => _AppRootState();
+
+  @override
+  State<AppRoot> createState() => _AppRootState();
 }
 
 class _AppRootState extends State<AppRoot> {
@@ -40,6 +45,7 @@ class _AppRootState extends State<AppRoot> {
           appBar: AppBar(
             title: const Text('Gym Log'),
             actions: [
+              // Reiniciar datos
               IconButton(
                 tooltip: 'Reiniciar datos',
                 onPressed: () async {
@@ -47,31 +53,67 @@ class _AppRootState extends State<AppRoot> {
                     context: context,
                     builder: (c) => AlertDialog(
                       title: const Text('Reiniciar datos'),
-                      content: const Text('Esto borrará tus sesiones y restaurará las plantillas por defecto. ¿Continuar?'),
+                      content: const Text(
+                        'Esto borrará tus sesiones y restaurará las plantillas por defecto. ¿Continuar?',
+                      ),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-                        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Sí, reiniciar')),
+                        TextButton(
+                          onPressed: () => Navigator.pop(c, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(c, true),
+                          child: const Text('Sí, reiniciar'),
+                        ),
                       ],
                     ),
                   );
-                  if (ok == true) await widget.state.resetAll();
+                  if (ok == true) {
+                    await widget.state.resetAll();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Datos reiniciados')),
+                    );
+                  }
                 },
                 icon: const Icon(Icons.restart_alt),
               ),
+
+              // Exportar / Compartir CSV (WhatsApp, Gmail, etc.)
+              // Exportar / Compartir SOLO el historial (sessions.csv)
               IconButton(
-                tooltip: 'Exportar a CSV',
-                icon: const Icon(Icons.table_view),
+                tooltip: 'Exportar historial (CSV)',
+                icon: const Icon(Icons.ios_share),
                 onPressed: () async {
                   try {
-                    final paths = await widget.state.exportAllCsv();
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      duration: const Duration(seconds: 5),
-                      content: Text('CSV exportados:\n${paths.join('\n')}'),
-                    ));
+                    // Si no hay sesiones, avisamos y salimos
+                    if (widget.state.sessions.isEmpty) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('No hay sesiones para exportar.')),
+                      );
+                      return;
+                    }
+
+                    // 1) Generar SOLO el CSV de sesiones (historial)
+                    final file = await widget.state.exportSessionsCsv();
+
+                    // 2) Compartir el archivo por WhatsApp, Gmail, etc.
+                    await Share.shareXFiles(
+                      [
+                        XFile(
+                          file.path,
+                          name: file.path.split(Platform.pathSeparator).last, // p.ej. sessions.csv
+                        )
+                      ],
+                      text: 'Historial de entrenamientos (CSV).',
+                      subject: 'Historial Gym Log',
+                    );
                   } catch (e) {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error exportando CSV: $e')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error al compartir: $e')),
+                    );
                   }
                 },
               ),
@@ -86,9 +128,18 @@ class _AppRootState extends State<AppRoot> {
             selectedIndex: tab,
             onDestinationSelected: (i) => setState(() => tab = i),
             destinations: const [
-              NavigationDestination(icon: Icon(Icons.playlist_add), label: 'Inicio'),
-              NavigationDestination(icon: Icon(Icons.fact_check_outlined), label: 'Plantillas'),
-              NavigationDestination(icon: Icon(Icons.history), label: 'Historial'),
+              NavigationDestination(
+                icon: Icon(Icons.playlist_add),
+                label: 'Inicio',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.fact_check_outlined),
+                label: 'Plantillas',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.history),
+                label: 'Historial',
+              )
             ],
           ),
         );
