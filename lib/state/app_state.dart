@@ -10,6 +10,9 @@ import '../models/models.dart';
 class AppState extends ChangeNotifier {
   static const _kTemplates = 'gymlog.templates.v5';
   static const _kSessions  = 'gymlog.sessions.v5';
+  // NUEVO: control de versión del seed de plantillas
+  static const _kTemplatesSeedVersionKey = 'gymlog.templates.seed_version';
+  static const int kTemplatesSeedVersion = 2; // 👈 súbelo cada vez que cambies _defaultTemplates()
 
   final List<WorkoutTemplate> templates = [];
   final List<SessionData> sessions = [];
@@ -20,18 +23,41 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final tRaw = prefs.getString(_kTemplates);
     final sRaw = prefs.getString(_kSessions);
+    final storedSeed = prefs.getInt(_kTemplatesSeedVersionKey) ?? 0;
 
-    if (tRaw == null) {
-      templates..clear()..addAll(_defaultTemplates());
-      await prefs.setString(_kTemplates, jsonEncode(templates.map((e) => e.toJson()).toList()));
+    // --- Plantillas ---
+    if (tRaw == null || storedSeed < kTemplatesSeedVersion) {
+      // Sembrar / resembrar plantillas con tus defaults
+      templates
+        ..clear()
+        ..addAll(_defaultTemplates());
+      await prefs.setString(
+        _kTemplates,
+        jsonEncode(templates.map((e) => e.toJson()).toList()),
+      );
+      await prefs.setInt(_kTemplatesSeedVersionKey, kTemplatesSeedVersion);
     } else {
-      templates..clear()..addAll(((jsonDecode(tRaw) as List).map((e) => WorkoutTemplate.fromJson(e))));
+      final list = (jsonDecode(tRaw) as List)
+          .map((e) => WorkoutTemplate.fromJson(e))
+          .toList();
+      templates
+        ..clear()
+        ..addAll(list);
     }
+
+    // --- Sesiones (sin tocarlas) ---
     if (sRaw != null) {
-      sessions..clear()..addAll(((jsonDecode(sRaw) as List).map((e) => SessionData.fromJson(e))));
+      final list = (jsonDecode(sRaw) as List)
+          .map((e) => SessionData.fromJson(e))
+          .toList();
+      sessions
+        ..clear()
+        ..addAll(list);
     }
+
     notifyListeners();
   }
+
 
   // --- CSV ---
   Future<Directory> _getExportDir() async {
@@ -125,6 +151,26 @@ class AppState extends ChangeNotifier {
     sessions.clear();
     await _persist(); notifyListeners();
   }
+  Future<void> resetTemplatesOnly() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Restaura las plantillas por defecto
+    templates
+      ..clear()
+      ..addAll(_defaultTemplates());
+
+    // Persiste SOLO plantillas (no sesiones)
+    await prefs.setString(
+      _kTemplates,
+      jsonEncode(templates.map((e) => e.toJson()).toList()),
+    );
+
+    // Si implementaste "seed version", descomenta la línea siguiente:
+    // await prefs.setInt(_kTemplatesSeedVersionKey, kTemplatesSeedVersion);
+
+    notifyListeners();
+  }
+
 
   // === Tus plantillas por defecto ===
   List<WorkoutTemplate> _defaultTemplates() {

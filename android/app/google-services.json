@@ -1,26 +1,43 @@
 {
   "project_info": {
-    "project_number": "1037365635750",
-    "project_id": "gymalex-60870",
-    "storage_bucket": "gymalex-60870.firebasestorage.app"
+    "project_number": "61050908584",
+    "project_id": "my-gym-track-d976e",
+    "storage_bucket": "my-gym-track-d976e.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1037365635750:android:4751142c879d18f03de267",
+        "mobilesdk_app_id": "1:61050908584:android:cbbb60bff51a8d48a1379d",
         "android_client_info": {
           "package_name": "com.example.gym_v1"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "61050908584-o9nv8kvon393ubto4p7v1tq3mgfon9a0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyDGvT4pVeC71bAszi9NbdL7iM-rEHAYxb8"
+          "current_key": "AIzaSyCAMih1m9wMRogioR0kWGiqWNNNYxqFwdM"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "61050908584-o9nv8kvon393ubto4p7v1tq3mgfon9a0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "61050908584-79vb9oct51jh2cmkfijmn9864dbn78q5.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.gymV1"
+              }
+            }
+          ]
         }
       }
     }
