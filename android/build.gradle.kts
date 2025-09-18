@@ -5,7 +5,7 @@ plugins {
     id("com.android.library") apply false
     id("org.jetbrains.kotlin.android") apply false
     // Plugin de Google Services para Firebase: solo aquí con versión y apply false
-    id("com.google.gms.google-services") version "4.4.3" apply false
+
 }
 
 allprojects {

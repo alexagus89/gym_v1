@@ -1,21 +1,16 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import 'state/app_state.dart';
 import 'screens/start_tab.dart';
 import 'screens/templates_tab.dart';
 import 'screens/history_tab.dart';
+
 import 'package:share_plus/share_plus.dart';
 import 'dart:io' show Platform;
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const GymLogApp());
 }
 
@@ -27,60 +22,7 @@ class GymLogApp extends StatelessWidget {
     return MaterialApp(
       title: 'Gym Log',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blueGrey),
-      home: const AuthGate(), // 👈 pantalla de login si no hay usuario
-    );
-  }
-}
-
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
-
-  Future<void> _signInWithGoogle() async {
-    try {
-      // v7: usar el singleton y (opcional) inicializar
-      final signIn = GoogleSignIn.instance;
-      await signIn.initialize(); // seguro llamar antes de usar
-
-      // v7: ya no existe signIn(); ahora authenticate()
-      final user = await signIn.authenticate();
-
-      // v7: GoogleSignInAuthentication solo tiene idToken (no accessToken)
-      final gAuth = await user.authentication;
-
-      final credential = GoogleAuthProvider.credential(
-        idToken: gAuth.idToken,
-      );
-
-      await FirebaseAuth.instance.signInWithCredential(credential);
-    } catch (e) {
-      // Si el usuario cancela o hay error, lo capturamos y mostramos algo opcional
-      debugPrint('Sign-in error: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        final user = snap.data;
-        if (user == null) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Gym Log')),
-            body: Center(
-              child: FilledButton.icon(
-                onPressed: _signInWithGoogle,
-                icon: const Icon(Icons.login),
-                label: const Text('Iniciar sesión con Google'),
-              ),
-            ),
-          );
-        }
-        return AppRoot(state: AppState());
-      },
+      home: AppRoot(state: AppState()), // 👈 entra directo a tu app local
     );
   }
 }
@@ -105,17 +47,6 @@ class _AppRootState extends State<AppRoot> {
           appBar: AppBar(
             title: const Text('Gym Log'),
             actions: [
-              // Cerrar sesión
-              IconButton(
-                tooltip: 'Cerrar sesión',
-                icon: const Icon(Icons.logout),
-                onPressed: () async {
-                  // v7: signOut desde el singleton
-                  await GoogleSignIn.instance.signOut();
-                  await FirebaseAuth.instance.signOut();
-                },
-              ),
-
               // Reiniciar datos (todo)
               IconButton(
                 tooltip: 'Reiniciar datos',
@@ -144,7 +75,7 @@ class _AppRootState extends State<AppRoot> {
                 icon: const Icon(Icons.restart_alt),
               ),
 
-              // Exportar historial (CSV)
+              // Exportar SOLO historial (CSV)
               IconButton(
                 tooltip: 'Exportar historial (CSV)',
                 icon: const Icon(Icons.ios_share),

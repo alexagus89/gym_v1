@@ -6,7 +6,7 @@ plugins {
     // El plugin de Flutter debe ir después de Android y Kotlin
     id("dev.flutter.flutter-gradle-plugin")
     // Aplica Google Services aquí (sin versión)
-    id("com.google.gms.google-services")
+
 }
 
 android {
