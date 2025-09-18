@@ -8,16 +8,20 @@ import 'package:csv/csv.dart';
 import '../models/models.dart';
 
 class AppState extends ChangeNotifier {
-  static const _kTemplates = 'gymlog.templates.v5';
+  // ⬇️ Subimos la clave de plantillas para garantizar que coja los nuevos defaults
+  static const _kTemplates = 'gymlog.templates.v6'; // antes v5
   static const _kSessions  = 'gymlog.sessions.v5';
-  // NUEVO: control de versión del seed de plantillas
+
+  // Control de versión del "seed" de plantillas: súbelo cuando cambies _defaultTemplates()
   static const _kTemplatesSeedVersionKey = 'gymlog.templates.seed_version';
-  static const int kTemplatesSeedVersion = 2; // 👈 súbelo cada vez que cambies _defaultTemplates()
+  static const int kTemplatesSeedVersion = 2;
 
   final List<WorkoutTemplate> templates = [];
   final List<SessionData> sessions = [];
 
-  AppState() { _load(); }
+  AppState() {
+    _load();
+  }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -26,8 +30,8 @@ class AppState extends ChangeNotifier {
     final storedSeed = prefs.getInt(_kTemplatesSeedVersionKey) ?? 0;
 
     // --- Plantillas ---
+    // Si no hay plantillas guardadas (instalación limpia) o el seed es antiguo → resembrar
     if (tRaw == null || storedSeed < kTemplatesSeedVersion) {
-      // Sembrar / resembrar plantillas con tus defaults
       templates
         ..clear()
         ..addAll(_defaultTemplates());
@@ -58,7 +62,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-
   // --- CSV ---
   Future<Directory> _getExportDir() async {
     final base = await getApplicationDocumentsDirectory();
@@ -66,6 +69,7 @@ class AppState extends ChangeNotifier {
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
+
   Future<File> _writeCsv(List<List<dynamic>> rows, String fileName) async {
     final dir = await _getExportDir();
     final file = File('${dir.path}/$fileName');
@@ -73,26 +77,46 @@ class AppState extends ChangeNotifier {
     await file.writeAsString(csvData);
     return file;
   }
-  Future<File> exportTemplatesCsv() async {
-    final rows = <List<dynamic>>[
-      ['template_id','template_name','exercise_id','exercise_name','sets','target_reps'],
-    ];
-    for (final t in templates) {
-      for (final e in t.exercises) { rows.add([t.id,t.name,e.id,e.name,e.sets,e.targetReps]); }
-    }
-    return _writeCsv(rows, 'templates.csv');
-  }
+
+  /// Exporta solo sesiones (historial)
   Future<File> exportSessionsCsv() async {
     final rows = <List<dynamic>>[
       ['session_id','date_iso','template_id','template_name','set_id','exercise_name','set_index','reps','weight_kg','target_reps','done','notes'],
     ];
     for (final s in sessions) {
       for (final st in s.sets) {
-        rows.add([s.id,s.date.toIso8601String(),s.templateId,s.templateName,st.id,st.exerciseName,st.setIndex,st.reps,st.weight,st.targetReps,st.done,s.notes]);
+        rows.add([
+          s.id,
+          s.date.toIso8601String(),
+          s.templateId,
+          s.templateName,
+          st.id,
+          st.exerciseName,
+          st.setIndex,
+          st.reps,
+          st.weight,
+          st.targetReps,
+          st.done,
+          s.notes,
+        ]);
       }
     }
     return _writeCsv(rows, 'sessions.csv');
   }
+
+  /// (Sigue existiendo si lo quieres usar en algún sitio)
+  Future<File> exportTemplatesCsv() async {
+    final rows = <List<dynamic>>[
+      ['template_id','template_name','exercise_id','exercise_name','sets','target_reps'],
+    ];
+    for (final t in templates) {
+      for (final e in t.exercises) {
+        rows.add([t.id,t.name,e.id,e.name,e.sets,e.targetReps]);
+      }
+    }
+    return _writeCsv(rows, 'templates.csv');
+  }
+
   Future<List<String>> exportAllCsv() async {
     final t = await exportTemplatesCsv();
     final s = await exportSessionsCsv();
@@ -101,12 +125,20 @@ class AppState extends ChangeNotifier {
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kTemplates, jsonEncode(templates.map((e) => e.toJson()).toList()));
-    await prefs.setString(_kSessions,  jsonEncode(sessions.map((e) => e.toJson()).toList()));
+    await prefs.setString(
+      _kTemplates,
+      jsonEncode(templates.map((e) => e.toJson()).toList()),
+    );
+    await prefs.setString(
+      _kSessions,
+      jsonEncode(sessions.map((e) => e.toJson()).toList()),
+    );
   }
 
   // --- PR & prefill ---
-  double _epley1RM(int reps, double weight) => reps <= 1 ? weight : weight * (1 + reps / 30.0);
+  double _epley1RM(int reps, double weight) =>
+      reps <= 1 ? weight : weight * (1 + reps / 30.0);
+
   double best1RMFor(String exerciseName) {
     double best = 0;
     for (final s in sessions) {
@@ -119,38 +151,72 @@ class AppState extends ChangeNotifier {
     }
     return best;
   }
+
   SetEntry? lastSetFor(String exerciseName, int setIndex) {
     for (final s in sessions) {
       for (final st in s.sets) {
-        if (st.exerciseName == exerciseName && st.setIndex == setIndex) return st;
+        if (st.exerciseName == exerciseName && st.setIndex == setIndex) {
+          return st;
+        }
       }
     }
     return null;
   }
 
   // --- Mutaciones ---
-  Future<void> addTemplate(WorkoutTemplate t) async { templates.insert(0, t); await _persist(); notifyListeners(); }
+  Future<void> addTemplate(WorkoutTemplate t) async {
+    templates.insert(0, t);
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> updateTemplate(WorkoutTemplate t) async {
     final idx = templates.indexWhere((x) => x.id == t.id);
     if (idx >= 0) templates[idx] = t;
-    await _persist(); notifyListeners();
+    await _persist();
+    notifyListeners();
   }
-  Future<void> removeTemplate(String id) async { templates.removeWhere((e) => e.id == id); await _persist(); notifyListeners(); }
+
+  Future<void> removeTemplate(String id) async {
+    templates.removeWhere((e) => e.id == id);
+    await _persist();
+    notifyListeners();
+  }
 
   Future<void> addSession(SessionData s) async {
     final i = sessions.indexWhere((x) => x.id == s.id);
-    if (i >= 0) sessions[i] = s; else sessions.insert(0, s);
-    await _persist(); notifyListeners();
+    if (i >= 0) {
+      sessions[i] = s;
+    } else {
+      sessions.insert(0, s);
+    }
+    await _persist();
+    notifyListeners();
   }
-  Future<void> removeSession(String id) async { sessions.removeWhere((e) => e.id == id); await _persist(); notifyListeners(); }
+
+  Future<void> removeSession(String id) async {
+    sessions.removeWhere((e) => e.id == id);
+    await _persist();
+    notifyListeners();
+  }
 
   Future<void> resetAll() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kTemplates); await prefs.remove(_kSessions);
-    templates..clear()..addAll(_defaultTemplates());
+    await prefs.remove(_kTemplates);
+    await prefs.remove(_kSessions);
+
+    templates
+      ..clear()
+      ..addAll(_defaultTemplates());
     sessions.clear();
-    await _persist(); notifyListeners();
+
+    // Marcamos el seed actual para que no resembrar inmediatamente otra vez
+    await prefs.setInt(_kTemplatesSeedVersionKey, kTemplatesSeedVersion);
+
+    await _persist();
+    notifyListeners();
   }
+
   Future<void> resetTemplatesOnly() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -165,12 +231,11 @@ class AppState extends ChangeNotifier {
       jsonEncode(templates.map((e) => e.toJson()).toList()),
     );
 
-    // Si implementaste "seed version", descomenta la línea siguiente:
-    // await prefs.setInt(_kTemplatesSeedVersionKey, kTemplatesSeedVersion);
+    // Marca la versión de seed actual
+    await prefs.setInt(_kTemplatesSeedVersionKey, kTemplatesSeedVersion);
 
     notifyListeners();
   }
-
 
   // === Tus plantillas por defecto ===
   List<WorkoutTemplate> _defaultTemplates() {
@@ -217,6 +282,40 @@ class AppState extends ChangeNotifier {
           ExerciseTemplate(name: 'Hip Thrust con barra', sets: 4, targetReps: 8),
           ExerciseTemplate(name: 'Extensión de cuádriceps en máquina', sets: 3, targetReps: 12),
           ExerciseTemplate(name: 'Elevación de talones sentado (gemelos)', sets: 4, targetReps: 15),
+          ExerciseTemplate(name: 'Abs', sets: 3, targetReps: 8),
+        ],
+      ),
+      WorkoutTemplate(
+        name: 'Maigler 3 dias A',
+        exercises: [
+          ExerciseTemplate(name: 'Jalones al pecho', sets: 3, targetReps: 10),
+          ExerciseTemplate(name: 'Remo hammer', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Press inclinado barra', sets: 3, targetReps: 10),
+          ExerciseTemplate(name: 'Press plano maquina', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Curl barra Z', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Press frances', sets: 3, targetReps: 12),
+        ],
+      ),
+      WorkoutTemplate(
+        name: 'Maigler 3 dias B',
+        exercises: [
+          ExerciseTemplate(name: 'Sentadilla', sets: 3, targetReps: 10),
+          ExerciseTemplate(name: 'Hip Thrust', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Extensión de cuádriceps en máquina', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Gemelos o abductores', sets: 3, targetReps: 15),
+          ExerciseTemplate(name: 'Elevaciones laterales mancuerna', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Abs', sets: 3, targetReps: 12),
+        ],
+      ),
+      WorkoutTemplate(
+        name: 'Maigler 3 dias C',
+        exercises: [
+          ExerciseTemplate(name: 'Press banca', sets: 3, targetReps: 10),
+          ExerciseTemplate(name: 'Jalon pecho agarre estrecho', sets: 3, targetReps: 10),
+          ExerciseTemplate(name: 'Prensa inclinada', sets: 3, targetReps: 12),
+          ExerciseTemplate(name: 'Curl femoral', sets: 4, targetReps: 15),
+          ExerciseTemplate(name: 'Extension de triceps', sets: 3, targetReps: 8),
+          ExerciseTemplate(name: 'Curl de biceps', sets: 3, targetReps: 8),
           ExerciseTemplate(name: 'Abs', sets: 3, targetReps: 8),
         ],
       ),
