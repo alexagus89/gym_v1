@@ -46,6 +46,7 @@ class SetEntry {
   double weight;
   int targetReps;
   bool done;
+  int rir;
   SetEntry({
     String? id,
     required this.exerciseName,
@@ -54,6 +55,7 @@ class SetEntry {
     required this.weight,
     required this.targetReps,
     this.done = false,
+    this.rir = 0,
   }) : id = id ?? uid();
 
   factory SetEntry.fromJson(Map<String, dynamic> j) => SetEntry(
@@ -64,10 +66,11 @@ class SetEntry {
     weight: (j['weight'] as num).toDouble(),
     targetReps: j['targetReps'],
     done: j['done'] ?? false,
+    rir: j['rir'] ?? 10,
   );
   Map<String, dynamic> toJson() => {
     'id': id, 'exerciseName': exerciseName, 'setIndex': setIndex, 'reps': reps,
-    'weight': weight, 'targetReps': targetReps, 'done': done,
+    'weight': weight, 'targetReps': targetReps, 'done': done, 'rir': rir,
   };
 }
 

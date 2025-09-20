@@ -1,13 +1,19 @@
 // lib/screens/session_screen.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import '../state/app_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/models.dart';
+import '../state/app_state.dart';
 
 class SessionScreen extends StatefulWidget {
   final AppState state;
   final SessionData session;
   const SessionScreen({super.key, required this.state, required this.session});
-  @override State<SessionScreen> createState() => _SessionScreenState();
+
+  @override
+  State<SessionScreen> createState() => _SessionScreenState();
 }
 
 class _SessionScreenState extends State<SessionScreen> {
@@ -17,81 +23,275 @@ class _SessionScreenState extends State<SessionScreen> {
   @override
   void initState() {
     super.initState();
+    // Clonamos la sesión para editar sin tocar la instancia original
     s = SessionData(
       id: widget.session.id,
       date: widget.session.date,
       templateId: widget.session.templateId,
       templateName: widget.session.templateName,
-      sets: widget.session.sets.map((e) => SetEntry(
-        id: e.id, exerciseName: e.exerciseName, setIndex: e.setIndex,
-        reps: e.reps, weight: e.weight, targetReps: e.targetReps, done: e.done,
-      )).toList(),
+      sets: widget.session.sets
+          .map((e) => SetEntry(
+        id: e.id,
+        exerciseName: e.exerciseName,
+        setIndex: e.setIndex,
+        reps: e.reps,
+        weight: e.weight,
+        targetReps: e.targetReps,
+        rir: e.rir, // requiere que SetEntry tenga 'rir' en models.dart
+        done: e.done,
+      ))
+          .toList(),
       notes: widget.session.notes,
     );
     notesCtrl = TextEditingController(text: s.notes);
   }
 
-  @override void dispose() { notesCtrl.dispose(); super.dispose(); }
+  @override
+  void dispose() {
+    notesCtrl.dispose();
+    super.dispose();
+  }
+
+  // ===== Draft (borrador) por plantilla: persiste si sales sin guardar =====
+  String get _draftKey => 'gymlog.draft.session.${s.templateId}';
+
+  Future<void> _saveDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_draftKey, jsonEncode(s.toJson()));
+  }
+
+  Future<void> _clearDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_draftKey);
+  }
+
+  // ===== Añadir ejercicio (diálogo) =====
+  Future<void> _addExerciseDialog() async {
+    final nameCtrl = TextEditingController();
+    final setsCtrl = TextEditingController(text: '3');
+    final repsCtrl = TextEditingController(text: '10');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Añadir ejercicio'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del ejercicio',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: setsCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Series',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: repsCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Reps objetivo',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Añadir')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    final name = nameCtrl.text.trim();
+    final setsN = int.tryParse(setsCtrl.text) ?? 0;
+    final target = int.tryParse(repsCtrl.text) ?? 0;
+    if (name.isEmpty || setsN <= 0 || target <= 0) return;
+
+    // Crear series nuevas; pre-fill con histórico si existe
+    final newSets = <SetEntry>[];
+    int baseIndex = 0; // por si ya existe el mismo ejercicio en la sesión
+    for (final st in s.sets) {
+      if (st.exerciseName == name && st.setIndex > baseIndex) baseIndex = st.setIndex;
+    }
+    for (int i = 0; i < setsN; i++) {
+      final nextIndex = baseIndex + i + 1;
+      final last = widget.state.lastSetFor(name, nextIndex);
+      newSets.add(SetEntry(
+        exerciseName: name,
+        setIndex: nextIndex,
+        reps: last?.reps ?? 0,
+        weight: last?.weight ?? 0.0,
+        targetReps: target,
+        rir: last?.rir ?? 0,
+        done: false,
+      ));
+    }
+
+    setState(() {
+      s.sets.addAll(newSets);
+    });
+    await _saveDraft();
+  }
+
+  // ===== Eliminar ejercicio completo (todas sus series) =====
+  Future<void> _removeExerciseGroup(String exerciseName) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Eliminar ejercicio'),
+        content: Text('¿Eliminar “$exerciseName” y todas sus series de esta sesión?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      setState(() {
+        s.sets.removeWhere((st) => st.exerciseName == exerciseName);
+      });
+      await _saveDraft();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Agrupar sets por ejercicio (mantiene el orden en que aparecen)
     final Map<String, List<SetEntry>> groups = {};
-    for (final set in s.sets) { groups.putIfAbsent(set.exerciseName, () => []).add(set); }
+    for (final set in s.sets) {
+      groups.putIfAbsent(set.exerciseName, () => []).add(set);
+    }
 
-    return Scaffold(
-      appBar: AppBar(title: Text('Sesión • ${s.templateName}')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Row(children: [
-            const Icon(Icons.calendar_today_outlined, size: 18),
-            const SizedBox(width: 8),
-            Text('${s.date.year}-${s.date.month.toString().padLeft(2, '0')}-${s.date.day.toString().padLeft(2, '0')}'),
-          ]),
-          const SizedBox(height: 12),
-          ...groups.entries.map((e) => _ExerciseCard(
-            appState: widget.state,          // (si ya lo tenías)
-            name: e.key,
-            sets: e.value,
-            onChanged: () => setState(() {}),
-            onAddSet: (newSet) {             // (si ya lo tenías)
-              setState(() { s.sets.add(newSet); });
-            },
-            onRemoveLast: () {               // 👈 NUEVO
-              setState(() {
-                final setsOfExercise = s.sets.where((st) => st.exerciseName == e.key).toList();
-                if (setsOfExercise.isEmpty) return;
-                setsOfExercise.sort((a, b) => a.setIndex.compareTo(b.setIndex));
-                final last = setsOfExercise.last;
-                s.sets.removeWhere((st) => st.id == last.id);
-              });
-            },
-            onRename: (newName) {
-              setState(() {
-                final trimmed = newName.trim();
-                if (trimmed.isEmpty) return;
-                for (final st in s.sets) {
-                  if (st.exerciseName == e.key) st.exerciseName = trimmed;
-                }
-              });
-            },
-          )),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        // Guarda el borrador cuando se intenta/consigue salir
+        _saveDraft();
+      },
+      child: Scaffold(
+        appBar: AppBar(title: Text('Sesión • ${s.templateName}')),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Row(children: [
+              const Icon(Icons.calendar_today_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                '${s.date.year}-${s.date.month.toString().padLeft(2, '0')}-${s.date.day.toString().padLeft(2, '0')}',
+              ),
+            ]),
+            const SizedBox(height: 12),
 
-          const SizedBox(height: 12),
-          TextField(
-            controller: notesCtrl,
-            decoration: const InputDecoration(labelText: 'Notas (opcional)', border: OutlineInputBorder()),
-            maxLines: 3,
-            onChanged: (v) => s.notes = v,
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: () async { await widget.state.addSession(s); if (mounted) Navigator.of(context).pop(); },
-            child: const Text('Guardar sesión'),
-          ),
-          const SizedBox(height: 12),
-          Text('Volumen total: ${s.totalVolume.toStringAsFixed(1)} kg·reps   •   Reps: ${s.totalReps}'),
-        ],
+            // Tarjetas de ejercicios
+            ...groups.entries.map(
+                  (e) => _ExerciseCard(
+                appState: widget.state,
+                name: e.key,
+                sets: e.value,
+                onChanged: () async {
+                  setState(() {});
+                  await _saveDraft();
+                },
+                onRename: (newName) async {
+                  setState(() {
+                    final trimmed = newName.trim();
+                    if (trimmed.isEmpty) return;
+                    for (final st in s.sets) {
+                      if (st.exerciseName == e.key) {
+                        st.exerciseName = trimmed;
+                      }
+                    }
+                  });
+                  await _saveDraft();
+                },
+                onAddSet: (newSet) async {
+                  setState(() {
+                    s.sets.add(newSet);
+                  });
+                  await _saveDraft();
+                },
+                onRemoveLast: () async {
+                  setState(() {
+                    final setsOfExercise = s.sets
+                        .where((st) => st.exerciseName == e.key)
+                        .toList()
+                      ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+                    if (setsOfExercise.isEmpty) return;
+                    final last = setsOfExercise.last;
+                    s.sets.removeWhere((st) => st.id == last.id);
+                  });
+                  await _saveDraft();
+                },
+                onDeleteExercise: () => _removeExerciseGroup(e.key),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Botón añadir ejercicio
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _addExerciseDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Añadir ejercicio'),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Notas
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Notas (opcional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+              onChanged: (v) async {
+                s.notes = v;
+                await _saveDraft();
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // Guardar
+            FilledButton(
+              onPressed: () async {
+                await widget.state.addSession(s);
+                await _clearDraft(); // limpiamos borrador al guardar con éxito
+                if (mounted) Navigator.of(context).pop();
+              },
+              child: const Text('Guardar sesión'),
+            ),
+
+            const SizedBox(height: 12),
+            Text(
+              'Volumen total: ${s.totalVolume.toStringAsFixed(1)} kg·reps   •   Reps: ${s.totalReps}',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -103,7 +303,8 @@ class _ExerciseCard extends StatefulWidget {
   final VoidCallback onChanged;
   final ValueChanged<String> onRename;
   final ValueChanged<SetEntry> onAddSet;
-  final VoidCallback onRemoveLast; // NUEVO
+  final VoidCallback onRemoveLast;
+  final VoidCallback onDeleteExercise; // botón de papelera
   final AppState appState;
 
   const _ExerciseCard({
@@ -112,7 +313,8 @@ class _ExerciseCard extends StatefulWidget {
     required this.onChanged,
     required this.onRename,
     required this.onAddSet,
-    required this.onRemoveLast, // NUEVO
+    required this.onRemoveLast,
+    required this.onDeleteExercise,
     required this.appState,
   });
 
@@ -124,21 +326,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
   late final TextEditingController _nameCtrl;
   final Map<String, TextEditingController> _repsCtrls = {};
   final Map<String, TextEditingController> _kgCtrls = {};
-
-  // ==== Estilos compactos para evitar overflow ====
-  ButtonStyle _btnSmallOutlined() => OutlinedButton.styleFrom(
-    minimumSize: const Size(36, 36),
-    padding: const EdgeInsets.symmetric(horizontal: 8),
-    visualDensity: VisualDensity.compact,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
-
-  ButtonStyle _btnSmallFilled() => FilledButton.styleFrom(
-    minimumSize: const Size(36, 36),
-    padding: const EdgeInsets.symmetric(horizontal: 10),
-    visualDensity: VisualDensity.compact,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
+  final Map<String, TextEditingController> _rirCtrls = {};
 
   @override
   void initState() {
@@ -167,20 +355,23 @@ class _ExerciseCardState extends State<_ExerciseCard> {
         s.id,
             () => TextEditingController(text: s.weight == 0 ? '' : s.weight.toString()),
       );
+      _rirCtrls.putIfAbsent(
+        s.id,
+            () => TextEditingController(text: (s.rir == 0) ? '' : s.rir.toString()),
+      );
     }
+    // Limpieza de controladores huérfanos
     _repsCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_repsCtrls.remove);
     _kgCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_kgCtrls.remove);
+    _rirCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_rirCtrls.remove);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    for (final c in _repsCtrls.values) {
-      c.dispose();
-    }
-    for (final c in _kgCtrls.values) {
-      c.dispose();
-    }
+    for (final c in _repsCtrls.values) c.dispose();
+    for (final c in _kgCtrls.values) c.dispose();
+    for (final c in _rirCtrls.values) c.dispose();
     super.dispose();
   }
 
@@ -197,10 +388,8 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     final isPR = currentBest > 0 && currentBest > bestHistorical + 0.1;
 
     void addOneSet() {
-      final nextIndex = (widget.sets.isEmpty
-          ? 0
-          : widget.sets.map((x) => x.setIndex).reduce((a, b) => a > b ? a : b)) +
-          1;
+      final nextIndex =
+          (widget.sets.isEmpty ? 0 : widget.sets.map((x) => x.setIndex).reduce((a, b) => a > b ? a : b)) + 1;
       final last = widget.appState.lastSetFor(widget.name, nextIndex);
       final target = widget.sets.isNotEmpty ? widget.sets.first.targetReps : 10;
 
@@ -210,6 +399,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
         reps: last?.reps ?? 0,
         weight: last?.weight ?? 0.0,
         targetReps: target,
+        rir: last?.rir ?? 0,
         done: false,
       );
 
@@ -228,16 +418,32 @@ class _ExerciseCardState extends State<_ExerciseCard> {
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextFormField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Ejercicio',
-              border: OutlineInputBorder(),
-              isDense: true, // un pelín más compacto
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            ),
-            onChanged: widget.onRename,
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Ejercicio',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  ),
+                  onChanged: widget.onRename,
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'Eliminar ejercicio',
+                onPressed: widget.onDeleteExercise,
+                icon: const Icon(Icons.delete_outline),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              ),
+            ],
           ),
+
           if (isPR) ...[
             const SizedBox(height: 8),
             Row(children: [
@@ -246,110 +452,76 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           ],
           const SizedBox(height: 8),
 
+          // Filas de series (solo texto; sin botones +/- en Reps/Kg/RIR)
           ...widget.sets.map((s) {
             final repsCtrl = _repsCtrls[s.id]!;
             final kgCtrl = _kgCtrls[s.id]!;
+            final rirCtrl = _rirCtrls[s.id]!;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Row(children: [
-                SizedBox(width: 28, child: Text('#${s.setIndex}')), // antes 36 → 28
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(width: 28, child: Text('#${s.setIndex}')),
 
-                // Reps con +/- compactos
+                // Reps
                 Expanded(
-                  child: Row(children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: repsCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Reps',
-                          isDense: true, // compacto
-                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                        ),
-                        onChanged: (v) {
-                          s.reps = int.tryParse(v) ?? 0;
-                          widget.onChanged();
-                        },
-                      ),
+                  child: TextFormField(
+                    controller: repsCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Reps',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      height: 36,
-                      child: OutlinedButton(
-                        style: _btnSmallOutlined(),
-                        onPressed: () {
-                          s.reps = (s.reps + 1).clamp(0, 1000).toInt();
-                          repsCtrl.text = s.reps.toString();
-                          widget.onChanged();
-                        },
-                        child: const Text('+'),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      height: 36,
-                      child: OutlinedButton(
-                        style: _btnSmallOutlined(),
-                        onPressed: () {
-                          s.reps = (s.reps - 1).clamp(0, 1000).toInt();
-                          repsCtrl.text = s.reps == 0 ? '' : s.reps.toString();
-                          widget.onChanged();
-                        },
-                        child: const Text('-'),
-                      ),
-                    ),
-                  ]),
+                    onChanged: (v) {
+                      s.reps = int.tryParse(v) ?? 0;
+                      widget.onChanged();
+                    },
+                  ),
                 ),
+                const SizedBox(width: 6),
 
-                const SizedBox(width: 8),
-
-                // Kg con +/-2.5 compactos
+                // Kg
                 Expanded(
-                  child: Row(children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: kgCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Kg',
-                          isDense: true, // compacto
-                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                        ),
-                        onChanged: (v) {
-                          s.weight = double.tryParse(v.replaceAll(',', '.')) ?? 0;
-                          widget.onChanged();
-                        },
-                      ),
+                  child: TextFormField(
+                    controller: kgCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Kg',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      height: 36,
-                      child: OutlinedButton(
-                        style: _btnSmallOutlined(),
-                        onPressed: () {
-                          s.weight = s.weight + 2.5;
-                          kgCtrl.text = s.weight.toString();
-                          widget.onChanged();
-                        },
-                        child: const Text('+2.5'),
-                      ),
+                    onChanged: (v) {
+                      s.weight = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 6),
+
+                // RIR
+                SizedBox(
+                  width: 90,
+                  child: TextFormField(
+                    controller: rirCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'RIR',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      height: 36,
-                      child: OutlinedButton(
-                        style: _btnSmallOutlined(),
-                        onPressed: () {
-                          s.weight = s.weight - 2.5;
-                          if (s.weight < 0) s.weight = 0;
-                          kgCtrl.text = s.weight == 0 ? '' : s.weight.toString();
-                          widget.onChanged();
-                        },
-                        child: const Text('-2.5'),
-                      ),
-                    ),
-                  ]),
+                    onChanged: (v) {
+                      final parsed = int.tryParse(v) ?? 0;
+                      s.rir = parsed.clamp(0, 5);
+                      if (s.rir.toString() != rirCtrl.text) {
+                        rirCtrl.text = s.rir == 0 ? '' : s.rir.toString();
+                        rirCtrl.selection = TextSelection.fromPosition(
+                          TextPosition(offset: rirCtrl.text.length),
+                        );
+                      }
+                      widget.onChanged();
+                    },
+                  ),
                 ),
               ]),
             );
@@ -357,12 +529,12 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
           const SizedBox(height: 8),
 
-          // Fila inferior: evita overflow con Wrap en los botones
+          // Pie: info + acciones (botones compactos: "-" y "+")
           Row(
             children: [
               Expanded(
                 child: Text(
-                  'Objetivo aprox: ${widget.sets.isNotEmpty ? widget.sets.first.targetReps : '-'} reps',
+                  'Objetivo: ${widget.sets.isNotEmpty ? widget.sets.first.targetReps : '-'} reps  •  Series: ${widget.sets.length}',
                   style: const TextStyle(color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -372,17 +544,13 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  OutlinedButton.icon(
-                    style: _btnSmallOutlined(),
-                    onPressed: widget.sets.isEmpty ? null : () => removeLastSet(),
-                    icon: const Icon(Icons.remove),
-                    label: const Text('Eliminar última'),
+                  OutlinedButton(
+                    onPressed: widget.sets.isEmpty ? null : removeLastSet,
+                    child: const Text('-'),
                   ),
-                  FilledButton.icon(
-                    style: _btnSmallFilled(),
+                  FilledButton(
                     onPressed: addOneSet,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Añadir serie'),
+                    child: const Text('+'),
                   ),
                 ],
               ),

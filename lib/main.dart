@@ -9,6 +9,8 @@ import 'screens/history_tab.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io' show Platform;
 
+import 'screens/stats_tab.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const GymLogApp());
@@ -107,7 +109,8 @@ class _AppRootState extends State<AppRoot> {
           body: switch (tab) {
             0 => StartTab(state: widget.state),
             1 => TemplatesTab(state: widget.state),
-            _ => HistoryTab(state: widget.state),
+            2 => HistoryTab(state: widget.state),
+            _ => StatsTab(state: widget.state), // 👈 nuevo
           },
           bottomNavigationBar: NavigationBar(
             selectedIndex: tab,
@@ -116,6 +119,7 @@ class _AppRootState extends State<AppRoot> {
               NavigationDestination(icon: Icon(Icons.playlist_add), label: 'Inicio'),
               NavigationDestination(icon: Icon(Icons.fact_check_outlined), label: 'Plantillas'),
               NavigationDestination(icon: Icon(Icons.history), label: 'Historial'),
+              NavigationDestination(icon: Icon(Icons.query_stats), label: 'Progreso'), // 👈 nuevo
             ],
           ),
         );

@@ -81,7 +81,7 @@ class AppState extends ChangeNotifier {
   /// Exporta solo sesiones (historial)
   Future<File> exportSessionsCsv() async {
     final rows = <List<dynamic>>[
-      ['session_id','date_iso','template_id','template_name','set_id','exercise_name','set_index','reps','weight_kg','target_reps','done','notes'],
+      ['session_id','date_iso','template_id','template_name','set_id','exercise_name','set_index','reps','weight_kg','target_reps','rir','done','notes'],
     ];
     for (final s in sessions) {
       for (final st in s.sets) {
@@ -96,6 +96,7 @@ class AppState extends ChangeNotifier {
           st.reps,
           st.weight,
           st.targetReps,
+          st.rir,
           st.done,
           s.notes,
         ]);
@@ -321,4 +322,124 @@ class AppState extends ChangeNotifier {
       ),
     ];
   }
+  /// Nombres únicos de ejercicios (plantillas + historial)
+  List<String> allExerciseNames() {
+    final s = <String>{};
+    for (final t in templates) {
+      for (final e in t.exercises) {
+        s.add(e.name);
+      }
+    }
+    for (final ses in sessions) {
+      for (final st in ses.sets) {
+        s.add(st.exerciseName);
+      }
+    }
+    final list = s.toList()..sort();
+    return list;
+  }
+
+  /// Muestras recientes de un ejercicio: fecha + set + reps + kg + 1RM estimado
+  List<_ExerciseSample> getRecentExerciseSamples(String exerciseName, {int limit = 50}) {
+    final samples = <_ExerciseSample>[];
+    for (final ses in sessions) {
+      for (final st in ses.sets) {
+        if (st.exerciseName == exerciseName) {
+          final est = _epley1RM(st.reps, st.weight);
+          samples.add(_ExerciseSample(
+            date: ses.date,
+            setIndex: st.setIndex,
+            reps: st.reps,
+            weight: st.weight,
+            est1rm: st.reps > 0 && st.weight > 0 ? est : 0,
+            sessionId: ses.id,
+          ));
+        }
+      }
+    }
+    samples.sort((a, b) => b.date.compareTo(a.date)); // más recientes primero
+    if (samples.length > limit) {
+      return samples.sublist(0, limit);
+    }
+    return samples;
+  }
+
+  /// Mejor set por carga total (kg*reps)
+  _BestSetSummary bestVolumeSet(String exerciseName) {
+    double bestVol = 0;
+    DateTime? bestDate;
+    for (final ses in sessions) {
+      for (final st in ses.sets) {
+        if (st.exerciseName == exerciseName) {
+          final vol = st.weight * st.reps;
+          if (vol > bestVol) {
+            bestVol = vol;
+            bestDate = ses.date;
+          }
+        }
+      }
+    }
+    return _BestSetSummary(bestVolume: bestVol, date: bestDate);
+  }
+
+  /// Promedio reps y kg en las últimas N sesiones donde aparece el ejercicio
+  _Averages recentAverages(String exerciseName, {int sessionsCount = 3}) {
+    // Tomamos últimas N fechas únicas que contengan el ejercicio
+    final perDate = <DateTime, List<SetEntry>>{};
+    for (final ses in sessions) {
+      final sets = ses.sets.where((st) => st.exerciseName == exerciseName).toList();
+      if (sets.isNotEmpty) {
+        perDate[ses.date] = sets;
+      }
+    }
+    final dates = perDate.keys.toList()..sort((a, b) => b.compareTo(a));
+    final take = dates.take(sessionsCount);
+
+    double repsSum = 0;
+    double kgSum = 0;
+    int n = 0;
+
+    for (final d in take) {
+      final sets = perDate[d]!;
+      for (final st in sets) {
+        repsSum += st.reps;
+        kgSum += st.weight;
+        n++;
+      }
+    }
+
+    return n == 0 ? _Averages(avgReps: 0, avgKg: 0) : _Averages(avgReps: repsSum / n, avgKg: kgSum / n);
+  }
 }
+
+/// Modelitos internos para el tab de progreso
+class _ExerciseSample {
+  final DateTime date;
+  final int setIndex;
+  final int reps;
+  final double weight;
+  final double est1rm;
+  final String sessionId;
+  _ExerciseSample({
+    required this.date,
+    required this.setIndex,
+    required this.reps,
+    required this.weight,
+    required this.est1rm,
+    required this.sessionId,
+  });
+}
+
+class _BestSetSummary {
+  final double bestVolume;
+  final DateTime? date;
+  _BestSetSummary({required this.bestVolume, required this.date});
+}
+
+class _Averages {
+  final double avgReps;
+  final double avgKg;
+  _Averages({required this.avgReps, required this.avgKg});
+}
+
+
