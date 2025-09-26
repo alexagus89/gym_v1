@@ -7,9 +7,15 @@ class HistoryTab extends StatelessWidget {
   final AppState state;
   const HistoryTab({super.key, required this.state});
 
+  String _fmtDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
-    if (state.sessions.isEmpty) return const Center(child: Text('Sin sesiones aún'));
+    if (state.sessions.isEmpty) {
+      return const Center(child: Text('Sin sesiones aún'));
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: state.sessions.length,
@@ -18,32 +24,55 @@ class HistoryTab extends StatelessWidget {
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: InkWell(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SessionScreen(state: state, session: s))),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SessionScreen(
+                    state: state,
+                    session: s,
+                    fromHistory: true, // ✅ importante para guardado automático
+                  ),
+                ),
+              );
+            },
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('${s.date.year}-${s.date.month.toString().padLeft(2, '0')}-${s.date.day.toString().padLeft(2, '0')}',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  IconButton(
-                    tooltip: 'Eliminar sesión',
-                    onPressed: () => _confirmDelete(context, () async {
-                      final deleted = s;
-                      await state.removeSession(s.id);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: const Text('Sesión eliminada'),
-                          action: SnackBarAction(label: 'Deshacer', onPressed: () => state.addSession(deleted)),
-                        ));
-                      }
-                    }),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ]),
-                Text(s.templateName, style: const TextStyle(color: Colors.grey)),
-                const SizedBox(height: 8),
-                Text('Volumen: ${s.totalVolume.toStringAsFixed(1)}  •  Reps: ${s.totalReps}'),
-              ]),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Text(
+                      _fmtDate(s.date),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    IconButton(
+                      tooltip: 'Eliminar sesión',
+                      onPressed: () => _confirmDelete(context, () async {
+                        final deleted = s;
+                        await state.removeSession(s.id);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Sesión eliminada'),
+                              action: SnackBarAction(
+                                label: 'Deshacer',
+                                onPressed: () {
+                                  // No puede ser async; lanzamos sin esperar
+                                  state.addSession(deleted);
+                                },
+                              ),
+                            ),
+                          );
+                        }
+                      }),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ]),
+                  Text(s.templateName, style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Text('Volumen: ${s.totalVolume.toStringAsFixed(1)}  •  Reps: ${s.totalReps}'),
+                ],
+              ),
             ),
           ),
         );
@@ -52,7 +81,11 @@ class HistoryTab extends StatelessWidget {
   }
 }
 
-void _confirmDelete(BuildContext context, VoidCallback action) async {
+/// Confirmación genérica que acepta una acción asíncrona
+Future<void> _confirmDelete(
+    BuildContext context,
+    Future<void> Function() action,
+    ) async {
   final ok = await showDialog<bool>(
     context: context,
     builder: (c) => AlertDialog(
@@ -64,5 +97,7 @@ void _confirmDelete(BuildContext context, VoidCallback action) async {
       ],
     ),
   );
-  if (ok == true) action();
+  if (ok == true) {
+    await action();
+  }
 }

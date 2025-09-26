@@ -10,7 +10,15 @@ import '../state/app_state.dart';
 class SessionScreen extends StatefulWidget {
   final AppState state;
   final SessionData session;
-  const SessionScreen({super.key, required this.state, required this.session});
+  /// Si vienes desde Historial, guarda cada cambio inmediatamente.
+  final bool fromHistory;
+
+  const SessionScreen({
+    super.key,
+    required this.state,
+    required this.session,
+    this.fromHistory = false,
+  });
 
   @override
   State<SessionScreen> createState() => _SessionScreenState();
@@ -20,10 +28,15 @@ class _SessionScreenState extends State<SessionScreen> {
   late SessionData s;
   late final TextEditingController notesCtrl;
 
+  /// Para saber si hubo cambios pendientes desde la última persistencia.
+  bool _dirty = false;
+
+  String get _draftKey => 'gymlog.draft.session.${s.templateId}';
+
   @override
   void initState() {
     super.initState();
-    // Clonamos la sesión para editar sin tocar la instancia original
+    // Hacemos una copia editable de la sesión recibida.
     s = SessionData(
       id: widget.session.id,
       date: widget.session.date,
@@ -37,7 +50,7 @@ class _SessionScreenState extends State<SessionScreen> {
         reps: e.reps,
         weight: e.weight,
         targetReps: e.targetReps,
-        rir: e.rir, // requiere que SetEntry tenga 'rir' en models.dart
+        rir: e.rir,
         done: e.done,
       ))
           .toList(),
@@ -52,9 +65,6 @@ class _SessionScreenState extends State<SessionScreen> {
     super.dispose();
   }
 
-  // ===== Draft (borrador) por plantilla: persiste si sales sin guardar =====
-  String get _draftKey => 'gymlog.draft.session.${s.templateId}';
-
   Future<void> _saveDraft() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_draftKey, jsonEncode(s.toJson()));
@@ -65,7 +75,20 @@ class _SessionScreenState extends State<SessionScreen> {
     await prefs.remove(_draftKey);
   }
 
-  // ===== Añadir ejercicio (diálogo) =====
+  /// Marca sucio y persiste según el origen:
+  /// - fromHistory=true  -> guardar sesión inmediatamente en historial.
+  /// - fromHistory=false -> guardar borrador.
+  Future<void> _onDirty() async {
+    _dirty = true;
+    if (widget.fromHistory) {
+      await widget.state.addSession(s);
+    } else {
+      await _saveDraft();
+    }
+    if (mounted) setState(() {});
+  }
+
+  // === Añadir ejercicio (diálogo) ===
   Future<void> _addExerciseDialog() async {
     final nameCtrl = TextEditingController();
     final setsCtrl = TextEditingController(text: '3');
@@ -127,22 +150,21 @@ class _SessionScreenState extends State<SessionScreen> {
     final target = int.tryParse(repsCtrl.text) ?? 0;
     if (name.isEmpty || setsN <= 0 || target <= 0) return;
 
-    // Crear series nuevas; pre-fill con histórico si existe
+    // Crear las nuevas series (vacías)
     final newSets = <SetEntry>[];
-    int baseIndex = 0; // por si ya existe el mismo ejercicio en la sesión
+    int baseIndex = 0;
     for (final st in s.sets) {
       if (st.exerciseName == name && st.setIndex > baseIndex) baseIndex = st.setIndex;
     }
     for (int i = 0; i < setsN; i++) {
       final nextIndex = baseIndex + i + 1;
-      final last = widget.state.lastSetFor(name, nextIndex);
       newSets.add(SetEntry(
         exerciseName: name,
         setIndex: nextIndex,
-        reps: last?.reps ?? 0,
-        weight: last?.weight ?? 0.0,
+        reps: 0,
+        weight: 0.0,
         targetReps: target,
-        rir: last?.rir ?? 0,
+        rir: 0,
         done: false,
       ));
     }
@@ -150,10 +172,10 @@ class _SessionScreenState extends State<SessionScreen> {
     setState(() {
       s.sets.addAll(newSets);
     });
-    await _saveDraft();
+    await _onDirty();
   }
 
-  // ===== Eliminar ejercicio completo (todas sus series) =====
+  // === Eliminar ejercicio completo (todas sus series) ===
   Future<void> _removeExerciseGroup(String exerciseName) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -170,23 +192,33 @@ class _SessionScreenState extends State<SessionScreen> {
       setState(() {
         s.sets.removeWhere((st) => st.exerciseName == exerciseName);
       });
-      await _saveDraft();
+      await _onDirty();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Agrupar sets por ejercicio (mantiene el orden en que aparecen)
+    // Agrupar sets por ejercicio
     final Map<String, List<SetEntry>> groups = {};
     for (final set in s.sets) {
       groups.putIfAbsent(set.exerciseName, () => []).add(set);
     }
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, result) {
-        // Guarda el borrador cuando se intenta/consigue salir
-        _saveDraft();
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        // Guarda lo pendiente antes de cerrar
+        if (widget.fromHistory) {
+          if (_dirty) {
+            await widget.state.addSession(s);
+          }
+        } else {
+          if (_dirty) {
+            await _saveDraft();
+          }
+        }
+        if (mounted) Navigator.of(context).pop();
       },
       child: Scaffold(
         appBar: AppBar(title: Text('Sesión • ${s.templateName}')),
@@ -208,10 +240,7 @@ class _SessionScreenState extends State<SessionScreen> {
                 appState: widget.state,
                 name: e.key,
                 sets: e.value,
-                onChanged: () async {
-                  setState(() {});
-                  await _saveDraft();
-                },
+                onChanged: _onDirty, // ahora es Future<void> Function()
                 onRename: (newName) async {
                   setState(() {
                     final trimmed = newName.trim();
@@ -222,25 +251,22 @@ class _SessionScreenState extends State<SessionScreen> {
                       }
                     }
                   });
-                  await _saveDraft();
+                  await _onDirty();
                 },
                 onAddSet: (newSet) async {
-                  setState(() {
-                    s.sets.add(newSet);
-                  });
-                  await _saveDraft();
+                  setState(() => s.sets.add(newSet));
+                  await _onDirty();
                 },
                 onRemoveLast: () async {
                   setState(() {
-                    final setsOfExercise = s.sets
-                        .where((st) => st.exerciseName == e.key)
-                        .toList()
+                    final setsOfExercise =
+                    s.sets.where((st) => st.exerciseName == e.key).toList()
                       ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
                     if (setsOfExercise.isEmpty) return;
                     final last = setsOfExercise.last;
                     s.sets.removeWhere((st) => st.id == last.id);
                   });
-                  await _saveDraft();
+                  await _onDirty();
                 },
                 onDeleteExercise: () => _removeExerciseGroup(e.key),
               ),
@@ -270,17 +296,19 @@ class _SessionScreenState extends State<SessionScreen> {
               maxLines: 3,
               onChanged: (v) async {
                 s.notes = v;
-                await _saveDraft();
+                await _onDirty();
               },
             ),
 
             const SizedBox(height: 16),
 
-            // Guardar
+            // Guardar (finalizar)
             FilledButton(
               onPressed: () async {
                 await widget.state.addSession(s);
-                await _clearDraft(); // limpiamos borrador al guardar con éxito
+                if (!widget.fromHistory) {
+                  await _clearDraft();
+                }
                 if (mounted) Navigator.of(context).pop();
               },
               child: const Text('Guardar sesión'),
@@ -300,11 +328,12 @@ class _SessionScreenState extends State<SessionScreen> {
 class _ExerciseCard extends StatefulWidget {
   final String name;
   final List<SetEntry> sets;
-  final VoidCallback onChanged;
+  /// Ahora devuelve Future<void> para poder await desde arriba
+  final Future<void> Function() onChanged;
   final ValueChanged<String> onRename;
   final ValueChanged<SetEntry> onAddSet;
-  final VoidCallback onRemoveLast;
-  final VoidCallback onDeleteExercise; // botón de papelera
+  final Future<void> Function() onRemoveLast;
+  final VoidCallback onDeleteExercise;
   final AppState appState;
 
   const _ExerciseCard({
@@ -357,10 +386,9 @@ class _ExerciseCardState extends State<_ExerciseCard> {
       );
       _rirCtrls.putIfAbsent(
         s.id,
-            () => TextEditingController(text: (s.rir == 0) ? '' : s.rir.toString()),
+            () => TextEditingController(text: s.rir == 0 ? '' : s.rir.toString()),
       );
     }
-    // Limpieza de controladores huérfanos
     _repsCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_repsCtrls.remove);
     _kgCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_kgCtrls.remove);
     _rirCtrls.keys.where((k) => !currentIds.contains(k)).toList().forEach(_rirCtrls.remove);
@@ -387,30 +415,31 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     });
     final isPR = currentBest > 0 && currentBest > bestHistorical + 0.1;
 
-    void addOneSet() {
-      final nextIndex =
-          (widget.sets.isEmpty ? 0 : widget.sets.map((x) => x.setIndex).reduce((a, b) => a > b ? a : b)) + 1;
-      final last = widget.appState.lastSetFor(widget.name, nextIndex);
+    Future<void> addOneSet() async {
+      final nextIndex = (widget.sets.isEmpty
+          ? 0
+          : widget.sets.map((x) => x.setIndex).reduce((a, b) => a > b ? a : b)) +
+          1;
       final target = widget.sets.isNotEmpty ? widget.sets.first.targetReps : 10;
 
       final newSet = SetEntry(
         exerciseName: widget.name,
         setIndex: nextIndex,
-        reps: last?.reps ?? 0,
-        weight: last?.weight ?? 0.0,
+        reps: 0,
+        weight: 0.0,
         targetReps: target,
-        rir: last?.rir ?? 0,
+        rir: 0,
         done: false,
       );
 
       widget.onAddSet(newSet);
-      widget.onChanged();
+      await widget.onChanged();
     }
 
-    void removeLastSet() {
+    Future<void> removeLastSet() async {
       if (widget.sets.isEmpty) return;
-      widget.onRemoveLast();
-      widget.onChanged();
+      await widget.onRemoveLast();
+      await widget.onChanged();
     }
 
     return Card(
@@ -429,7 +458,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   ),
-                  onChanged: widget.onRename,
+                  onChanged: (v) => widget.onRename(v),
                 ),
               ),
               const SizedBox(width: 6),
@@ -452,7 +481,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           ],
           const SizedBox(height: 8),
 
-          // Filas de series (solo texto; sin botones +/- en Reps/Kg/RIR)
+          // === Filas de series (solo inputs de texto) ===
           ...widget.sets.map((s) {
             final repsCtrl = _repsCtrls[s.id]!;
             final kgCtrl = _kgCtrls[s.id]!;
@@ -473,9 +502,9 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
-                    onChanged: (v) {
+                    onChanged: (v) async {
                       s.reps = int.tryParse(v) ?? 0;
-                      widget.onChanged();
+                      await widget.onChanged();
                     },
                   ),
                 ),
@@ -491,15 +520,15 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
-                    onChanged: (v) {
-                      s.weight = double.tryParse(v.replaceAll(',', '.')) ?? 0;
-                      widget.onChanged();
+                    onChanged: (v) async {
+                      s.weight = double.tryParse(v.replaceAll(',', '.')) ?? 0.0;
+                      await widget.onChanged();
                     },
                   ),
                 ),
                 const SizedBox(width: 6),
 
-                // RIR
+                // RIR (0–20)
                 SizedBox(
                   width: 90,
                   child: TextFormField(
@@ -510,16 +539,15 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
-                    onChanged: (v) {
+                    onChanged: (v) async {
                       final parsed = int.tryParse(v) ?? 0;
-                      s.rir = parsed.clamp(0, 5);
+                      s.rir = parsed.clamp(0, 20);
                       if (s.rir.toString() != rirCtrl.text) {
                         rirCtrl.text = s.rir == 0 ? '' : s.rir.toString();
-                        rirCtrl.selection = TextSelection.fromPosition(
-                          TextPosition(offset: rirCtrl.text.length),
-                        );
+                        rirCtrl.selection =
+                            TextSelection.fromPosition(TextPosition(offset: rirCtrl.text.length));
                       }
-                      widget.onChanged();
+                      await widget.onChanged();
                     },
                   ),
                 ),
@@ -529,7 +557,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
           const SizedBox(height: 8),
 
-          // Pie: info + acciones (botones compactos: "-" y "+")
+          // Pie: info + acciones (añadir/eliminar serie)
           Row(
             children: [
               Expanded(
@@ -545,11 +573,11 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                 runSpacing: 6,
                 children: [
                   OutlinedButton(
-                    onPressed: widget.sets.isEmpty ? null : removeLastSet,
+                    onPressed: widget.sets.isEmpty ? null : () async => await removeLastSet(),
                     child: const Text('-'),
                   ),
                   FilledButton(
-                    onPressed: addOneSet,
+                    onPressed: () async => await addOneSet(),
                     child: const Text('+'),
                   ),
                 ],

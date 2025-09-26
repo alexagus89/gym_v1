@@ -1,15 +1,12 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-
 import 'state/app_state.dart';
 import 'screens/start_tab.dart';
 import 'screens/templates_tab.dart';
 import 'screens/history_tab.dart';
-
+import 'screens/stats_tab.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io' show Platform;
-
-import 'screens/stats_tab.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,7 +21,7 @@ class GymLogApp extends StatelessWidget {
     return MaterialApp(
       title: 'Gym Log',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blueGrey),
-      home: AppRoot(state: AppState()), // 👈 entra directo a tu app local
+      home: AppRoot(state: AppState()),
     );
   }
 }
@@ -38,7 +35,7 @@ class AppRoot extends StatefulWidget {
 }
 
 class _AppRootState extends State<AppRoot> {
-  int tab = 0; // 0 start, 1 templates, 2 history
+  int tab = 0; // 0 start, 1 templates, 2 history, 3 stats
 
   @override
   Widget build(BuildContext context) {
@@ -61,8 +58,14 @@ class _AppRootState extends State<AppRoot> {
                         'Esto borrará tus sesiones y restaurará las plantillas por defecto. ¿Continuar?',
                       ),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-                        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Sí, reiniciar')),
+                        TextButton(
+                          onPressed: () => Navigator.pop(c, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(c, true),
+                          child: const Text('Sí, reiniciar'),
+                        ),
                       ],
                     ),
                   );
@@ -110,7 +113,8 @@ class _AppRootState extends State<AppRoot> {
             0 => StartTab(state: widget.state),
             1 => TemplatesTab(state: widget.state),
             2 => HistoryTab(state: widget.state),
-            _ => StatsTab(state: widget.state), // 👈 nuevo
+            3 => StatsTab(state: widget.state),
+            _ => StartTab(state: widget.state), // fallback defensivo
           },
           bottomNavigationBar: NavigationBar(
             selectedIndex: tab,
@@ -119,7 +123,7 @@ class _AppRootState extends State<AppRoot> {
               NavigationDestination(icon: Icon(Icons.playlist_add), label: 'Inicio'),
               NavigationDestination(icon: Icon(Icons.fact_check_outlined), label: 'Plantillas'),
               NavigationDestination(icon: Icon(Icons.history), label: 'Historial'),
-              NavigationDestination(icon: Icon(Icons.query_stats), label: 'Progreso'), // 👈 nuevo
+              NavigationDestination(icon: Icon(Icons.query_stats), label: 'Progreso'),
             ],
           ),
         );

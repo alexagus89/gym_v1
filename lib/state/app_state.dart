@@ -23,6 +23,41 @@ class AppState extends ChangeNotifier {
     _load();
   }
 
+  // Renombra un ejercicio en TODAS las plantillas y en TODO el historial de sesiones
+  Future<void> renameExerciseEverywhere(String oldName, String newName) async {
+    final from = oldName.trim();
+    final to   = newName.trim();
+    if (from.isEmpty || to.isEmpty || from == to) return;
+
+    bool changed = false;
+
+    // Plantillas
+    for (final t in templates) {
+      for (final e in t.exercises) {
+        if (e.name == from) {
+          e.name = to;
+          changed = true;
+        }
+      }
+    }
+
+    // Historial de sesiones
+    for (final ses in sessions) {
+      for (final st in ses.sets) {
+        if (st.exerciseName == from) {
+          st.exerciseName = to;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      await _persist();
+      notifyListeners();
+    }
+  }
+
+
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final tRaw = prefs.getString(_kTemplates);
