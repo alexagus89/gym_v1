@@ -1,5 +1,5 @@
 // lib/models/models.dart
-import 'dart:convert';
+
 
 int _uidCounter = 0;
 String uid() {
@@ -42,11 +42,11 @@ class SetEntry {
   String id;
   String exerciseName;
   int setIndex;
-  int reps;
+  double reps;
   double weight;
   int targetReps;
   bool done;
-  int rir;
+  double rir;
   SetEntry({
     String? id,
     required this.exerciseName,
@@ -62,15 +62,22 @@ class SetEntry {
     id: j['id'],
     exerciseName: j['exerciseName'],
     setIndex: j['setIndex'],
-    reps: j['reps'],
+    reps: (j['reps'] as num).toDouble(),
     weight: (j['weight'] as num).toDouble(),
     targetReps: j['targetReps'],
     done: j['done'] ?? false,
-    rir: j['rir'] ?? 10,
+    rir: (j['rir'] as num?)?.toDouble() ?? 10.0,
   );
+
   Map<String, dynamic> toJson() => {
-    'id': id, 'exerciseName': exerciseName, 'setIndex': setIndex, 'reps': reps,
-    'weight': weight, 'targetReps': targetReps, 'done': done, 'rir': rir,
+    'id': id,
+    'exerciseName': exerciseName,
+    'setIndex': setIndex,
+    'reps': reps,
+    'weight': weight,
+    'targetReps': targetReps,
+    'done': done,
+    'rir': rir,
   };
 }
 
@@ -90,8 +97,14 @@ class SessionData {
     this.notes = '',
   }) : id = id ?? uid();
 
+  String targetRepsFromJson(dynamic v) {
+    if (v == null) return '';
+    if (v is int || v is double) return v.toString();
+    return v.toString();
+  }
+
   double get totalVolume => sets.fold(0, (p, s) => p + (s.weight * s.reps.toDouble()));
-  int get totalReps => sets.fold(0, (p, s) => p + s.reps);
+  double get totalReps => sets.fold(0, (p, s) => p + s.reps);
 
   factory SessionData.fromJson(Map<String, dynamic> j) => SessionData(
     id: j['id'],

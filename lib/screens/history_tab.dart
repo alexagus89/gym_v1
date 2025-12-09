@@ -1,103 +1,145 @@
-// lib/screens/history_tab.dart
+// lib/screens/history_screen.dart
 import 'package:flutter/material.dart';
 import '../state/app_state.dart';
+import '../models/models.dart';
 import 'session_screen.dart';
 
-class HistoryTab extends StatelessWidget {
+class HistoryScreen extends StatelessWidget {
   final AppState state;
-  const HistoryTab({super.key, required this.state});
+  const HistoryScreen({super.key, required this.state});
 
-  String _fmtDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String _ddmmyyyy(DateTime d) {
+    String two(int x) => x.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)}/${d.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (state.sessions.isEmpty) {
-      return const Center(child: Text('Sin sesiones aún'));
-    }
+    final theme = Theme.of(context);
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: state.sessions.length,
-      itemBuilder: (context, i) {
-        final s = state.sessions[i];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: InkWell(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SessionScreen(
-                    state: state,
-                    session: s,
-                    fromHistory: true, // ✅ importante para guardado automático
+    return AnimatedBuilder(
+      animation: state,
+      builder: (_, __) {
+        // Copia ordenada (más recientes primero)
+        final sessions = List<SessionData>.from(state.sessions)
+          ..sort((a, b) => b.date.compareTo(a.date));
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('Historial')),
+          body: sessions.isEmpty
+              ? Center(
+            child: Text(
+              'Sin sesiones aún',
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
+            ),
+          )
+              : ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: sessions.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (ctx, i) {
+              final s = sessions[i];
+              final dateStr = _ddmmyyyy(s.date);
+              final rutina  = s.templateName.isNotEmpty ? s.templateName : 'Sesión';
+              final volumen = '${s.totalVolume.toStringAsFixed(1)} kg·reps';
+              final reps    = 'Reps: ${s.totalReps}';
+
+              return InkWell(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => SessionScreen(
+                        state: state,
+                        session: s,
+                        fromHistory: true, // ✅ edición con guardado inmediato
+                      ),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      // Icono decorativo
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.fitness_center, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Dos líneas compactas
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Línea 1: fecha    tipo rutina
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    dateStr,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    rutina,
+                                    textAlign: TextAlign.right,
+                                    style: theme.textTheme.bodyMedium,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            // Línea 2: volumen    Reps
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    volumen,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.hintColor,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    reps,
+                                    textAlign: TextAlign.right,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.hintColor,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right),
+                    ],
                   ),
                 ),
               );
             },
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text(
-                      _fmtDate(s.date),
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    IconButton(
-                      tooltip: 'Eliminar sesión',
-                      onPressed: () => _confirmDelete(context, () async {
-                        final deleted = s;
-                        await state.removeSession(s.id);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Sesión eliminada'),
-                              action: SnackBarAction(
-                                label: 'Deshacer',
-                                onPressed: () {
-                                  // No puede ser async; lanzamos sin esperar
-                                  state.addSession(deleted);
-                                },
-                              ),
-                            ),
-                          );
-                        }
-                      }),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ]),
-                  Text(s.templateName, style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  Text('Volumen: ${s.totalVolume.toStringAsFixed(1)}  •  Reps: ${s.totalReps}'),
-                ],
-              ),
-            ),
           ),
         );
       },
     );
-  }
-}
-
-/// Confirmación genérica que acepta una acción asíncrona
-Future<void> _confirmDelete(
-    BuildContext context,
-    Future<void> Function() action,
-    ) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (c) => AlertDialog(
-      title: const Text('Confirmar'),
-      content: const Text('¿Eliminar definitivamente?'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Eliminar')),
-      ],
-    ),
-  );
-  if (ok == true) {
-    await action();
   }
 }

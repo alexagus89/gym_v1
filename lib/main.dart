@@ -46,40 +46,6 @@ class _AppRootState extends State<AppRoot> {
           appBar: AppBar(
             title: const Text('Gym Log'),
             actions: [
-              // Reiniciar datos (todo)
-              IconButton(
-                tooltip: 'Reiniciar datos',
-                onPressed: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (c) => AlertDialog(
-                      title: const Text('Reiniciar datos'),
-                      content: const Text(
-                        'Esto borrará tus sesiones y restaurará las plantillas por defecto. ¿Continuar?',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(c, false),
-                          child: const Text('Cancelar'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(c, true),
-                          child: const Text('Sí, reiniciar'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) {
-                    await widget.state.resetAll();
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Datos reiniciados')),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.restart_alt),
-              ),
-
               // Exportar SOLO historial (CSV)
               IconButton(
                 tooltip: 'Exportar historial (CSV)',
@@ -109,10 +75,11 @@ class _AppRootState extends State<AppRoot> {
               ),
             ],
           ),
+
           body: switch (tab) {
             0 => StartTab(state: widget.state),
             1 => TemplatesTab(state: widget.state),
-            2 => HistoryTab(state: widget.state),
+            2 => HistoryScreen(state: widget.state),
             3 => StatsTab(state: widget.state),
             _ => StartTab(state: widget.state), // fallback defensivo
           },

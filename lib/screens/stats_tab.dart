@@ -1,6 +1,7 @@
 // lib/screens/stats_tab.dart
 import 'package:flutter/material.dart';
 import '../state/app_state.dart';
+import 'session_screen.dart' show showExercisePickerBottomSheet;
 
 class StatsTab extends StatefulWidget {
   final AppState state;
@@ -68,9 +69,11 @@ class _StatsTabState extends State<StatsTab> {
     // ===== Estadísticas derivadas =====
     final name = initial;
     double best1RM = 0;
+    double bestWeight = 0;
     double avgReps = 0;
     double avgKg = 0;
     int sessionsWithExercise = 0;
+
 
     // Muestras recientes: (fecha, set, reps, kg, 1rm)
     final recentSamples = <_SampleRow>[];
@@ -78,6 +81,8 @@ class _StatsTabState extends State<StatsTab> {
     if (name != null) {
       // Mejor 1RM
       best1RM = widget.state.best1RMFor(name);
+      // Peso máximo absoluto
+      bestWeight = widget.state.bestWeightFor(name);
 
       // Agrupar por fecha las series del ejercicio
       final perDate = <DateTime, List<_SampleRow>>{};
@@ -144,26 +149,39 @@ class _StatsTabState extends State<StatsTab> {
         ),
         const SizedBox(height: 12),
 
-        // Selector de ejercicio (usa initialValue en lugar de value)
-        DropdownButtonFormField<String>(
-          key: ValueKey(initial), // para que respete cambios programáticos
-          initialValue: initial,
-          items: allNames
-              .map(
-                (n) => DropdownMenuItem<String>(
-              value: n,
-              child: Text(n, overflow: TextOverflow.ellipsis),
+        // Selector de ejercicio con buscador (bottom sheet reutilizable)
+        InkWell(
+          onTap: () async {
+            final pickedName = await showExercisePickerBottomSheet(
+              context: context,
+              allExerciseNames: allNames,
+              title: 'Seleccionar ejercicio',
+            );
+            if (pickedName == null) return;
+            final name = pickedName.trim();
+            if (name.isEmpty) return;
+            _onExerciseSelected(name);
+          },
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Ejercicio',
+              border: OutlineInputBorder(),
+              suffixIcon: Icon(Icons.arrow_drop_down),
             ),
-          )
-              .toList(),
-          onChanged: _onExerciseSelected,
-          decoration: const InputDecoration(
-            labelText: 'Ejercicio',
-            border: OutlineInputBorder(),
+            child: Text(
+              initial ?? 'Selecciona un ejercicio',
+              style: TextStyle(
+                color: initial == null
+                    ? Theme.of(context).hintColor
+                    : Theme.of(context).textTheme.bodyMedium?.color,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
 
         const SizedBox(height: 12),
+
 
         // Botón Renombrar (abre diálogo)
         Row(
@@ -192,11 +210,13 @@ class _StatsTabState extends State<StatsTab> {
             runSpacing: 8,
             children: [
               _StatChip(label: 'Mejor 1RM', value: '${best1RM.toStringAsFixed(1)} kg'),
+              _StatChip(label: 'Peso máximo', value: '${bestWeight.toStringAsFixed(1)} kg'),
               _StatChip(label: 'Media reps (últ. 3)', value: avgReps.toStringAsFixed(1)),
               _StatChip(label: 'Media kg (últ. 3)', value: avgKg.toStringAsFixed(1)),
               _StatChip(label: 'Sesiones totales', value: '$sessionsWithExercise'),
             ],
           ),
+
 
           const SizedBox(height: 16),
           const Text(
@@ -261,7 +281,7 @@ class _StatChip extends StatelessWidget {
 class _SampleRow {
   final DateTime date;
   final int setIndex;
-  final int reps;
+  final double reps;
   final double kg;
   final double est1rm;
   _SampleRow({
